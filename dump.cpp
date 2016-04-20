@@ -26,7 +26,7 @@
  * Control registers
  */
 #define MSR_IA32_CORE_PERF_GLOBAL_CTRL      0x38F
-#define MSR_IA32_PERF_FIXED_CTR_CTRL        0x38D
+#define MSR_IA32_FIXED_CTR_CTRL             0x38D
 
 
 /*
@@ -41,10 +41,10 @@
  */
 
 #define BIT_FIXED_ARCH_PERF_MONITOR_CTR_1   33 /* CPU_CLK_UNHALTED.CORE */
-#define BIT_FIXED_ARCH_PERF_MONITOR_CTR_2   34 /* CPU_CLK_UNHALTED.REF  */4
+#define BIT_FIXED_ARCH_PERF_MONITOR_CTR_2   34 /* CPU_CLK_UNHALTED.REF  */
 
-#define BIT_CTL_FC0 0
-#define BIT_CTL_FC1 1
+#define BIT_CONTROL_FIXED_COUNTER_0 0
+#define BIT_CONTROL_FIXED_COUNTER_1 1
 
 #define MASK(hex, mask) (hex|mask)
 #define BIT(pos) (1ULL << pos)
@@ -76,10 +76,10 @@ uint64_t rangeToMask(string range) {
 
     stringstream ss(range);
     ss >> start >> separator >> end;
-
     uint64_t mask = 0x0;
-    for(int shift = start; shift >= end; shift--) 
+    for(int shift = start; shift >= (int)end; shift--) {
         mask |= (1ULL << shift);
+    }
     return mask;
 }
 
@@ -125,11 +125,10 @@ class MSRRegister {
             uint64_t temp = 0;
 
             cout << "Reading MSR register 0x" << hex << regno << endl;
-            /* Error handling here please */
-            lseek(this->_fd, (off_t) regno, SEEK_SET);
-            int num_read  = read(this->_fd, &temp, sizeof(temp));
 
-            if(num_read != sizeof(temp)) {
+            /* Error handling here please */
+            int num_read  = pread(this->_fd, &temp, sizeof(temp), regno);
+            if(num_read  == -1) {
                 cout << "There was an error while reading MSR register" << endl;
             }
 
@@ -140,9 +139,9 @@ class MSRRegister {
          *  Writes 64 bits to the MSR register regno
          */
         void writeMSR(uint64_t regno, uint64_t pattern) {
-            lseek(this->_fd, (off_t) regno, SEEK_SET);
-            int num_written = write(this->_fd, &pattern, sizeof(pattern));
-            if(num_written != sizeof(pattern)) {
+            cout << "Writing to MSR register " << hex << regno << endl;
+            int num_written = pwrite(this->_fd, &pattern, sizeof(pattern), regno);
+            if(num_written == -1) {
                 cout << "Error while writing MSR register" << endl;
             }
         }
@@ -158,6 +157,17 @@ class MSRRegister {
 
         }
 
+        /*
+         * Resets one bit on a specific MSR register
+         */
+        void clearMSRBit(uint64_t regno, uint32_t bitno) {
+
+            uint64_t temp;
+            this->readMSR(regno, regmask, &temp);
+            temp = temp && ~(1ULL << bitno);
+            this->writeMSR(regno, temp);
+       }
+
 };
 
 int main() {
@@ -170,25 +180,52 @@ int main() {
     cout << "MSR_PLATFORM_INFO(15:8) "; 
     cout << "0x" << hex << temp << endl;
 
-    /* Enabling 
+    /* Enabling Monitor counter 1 and 2 via the global performance counter control register
      *  - BIT_FIXED_ARCH_PERF_MONITOR_CTR_1
      *       Counts the number of core cycles while the core is not in halted
-     *       sate.
+     /*       sate.
      *  - BIT_FIXED_ARCH_PERF_MONITOR_CTR_2 
      *       Counts the number of base operating frequency cycles while the core
      *       is not in halted state.
      *
-     * in MSR_IA32_PERF_FIXED_CTR_CTRL
+     * in MSR_IA32_CORE_PERF_GLOBAL_CTRL
      */
 
-    //cpu0.setMSRBit(BIT_FIXED_ARCH_PERF_MONITOR_CTR_1, MSR_IA32_PERF_FIXED_CTR_CTRL);
+    cpu0.setMSRBit(MSR_IA32_CORE_PERF_GLOBAL_CTRL, BIT_FIXED_ARCH_PERF_MONITOR_CTR_1);
+    cpu0.setMSRBit(MSR_IA32_CORE_PERF_GLOBAL_CTRL, BIT_FIXED_ARCH_PERF_MONITOR_CTR_2);
     
-    /* Enabling the Fixed-Function Performance Counter Control, aka MSR_IA32_PERF_FIXED_CTR_CTRL. 
+    /* Enabling the Fixed-Function Performance Counter via its control register,
+     * MSR_IA32_FIXED_CTR_CTRL.
      *
      * Settings bits:
-     *  - BIT_CTL_FC0
-     *  - BIT_CTL_FC1
+     *  - BIT_CONTROL_FIXED_COUNTER_0
+     *  - BIT_CONTROL_FIXED_COUNTER_1
      */
-    //cpu0.setMSRBit(BIT_CTL_FC0, MSR_IA32_PERF_FIXED_CTR_CTRL)
-    //cpu0.setMSRBit(BIT_CTL_FC1, MSR_IA32_PERF_FIXED_CTR_CTRL)
+    cpu0.setMSRBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_0);
+    cpu0.setMSRBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_1);
 
+    uint64_t prev_fixed_ctr1;
+    uint64_t prev_fixed_ctr2; 
+
+    
+    for(int i = 0 ; i<3; i++) {
+
+        cpu0.readMSR(0x30A, string("63:0"), &prev_fixed_ctr1);
+        cpu0.readMSR(MSR_IA32_FIXED_CTR2, string("63:0"), &prev_fixed_ctr2);
+
+        cout << "Fixed CTR1, CTR2 0x" 
+             << hex << prev_fixed_ctr1 << " " 
+             << hex << prev_fixed_ctr2 << endl;
+
+    }
+
+    /* Disabling Monitor counter 1 and 2 in the global performance counter control register*/
+    cpu0.clearMSRBit(MSR_IA32_CORE_PERF_GLOBAL_CTRL, BIT_FIXED_ARCH_PERF_MONITOR_CTR_1);
+    cpu0.clearMSRBit(MSR_IA32_CORE_PERF_GLOBAL_CTRL, BIT_FIXED_ARCH_PERF_MONITOR_CTR_2);
+
+    /* Disabling the fixed-function performance counter */
+    cpu0.clearMSRBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_0);
+    cpu0.clearMSRBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_1);
+
+
+}
