@@ -10,32 +10,27 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <signal.h>
+#include <stdlib.h>
 
-#define MSR_SIZE    2048
-#define BCLK        133.33
+#define BCLK        100
 
 #define BASE_OPERATING_RATIO "15:8"
 
 /*
  * IA32 registers of interest
  */
-
 #define MSR_PLATFORM_INFO                   0x0CE
-
 /*
  * Control registers
  */
 #define MSR_IA32_CORE_PERF_GLOBAL_CTRL      0x38F
 #define MSR_IA32_FIXED_CTR_CTRL             0x38D
-
-
 /*
  * Counter registers
  */
-#define MSR_IA32_FIXED_CTR1                 0x30A
-#define MSR_IA32_FIXED_CTR2                 0x30B
-
-
+#define MSR_IA32_FIXED_CTR_1                0x30A
+#define MSR_IA32_FIXED_CTR_2                0x30B
 /*
  * BITS definitions
  */
@@ -43,16 +38,27 @@
 #define BIT_FIXED_ARCH_PERF_MONITOR_CTR_1   33 /* CPU_CLK_UNHALTED.CORE */
 #define BIT_FIXED_ARCH_PERF_MONITOR_CTR_2   34 /* CPU_CLK_UNHALTED.REF  */
 
-#define BIT_CONTROL_FIXED_COUNTER_0 0
-#define BIT_CONTROL_FIXED_COUNTER_1 1
+#define BIT_CONTROL_FIXED_COUNTER_1_LOW  4
+#define BIT_CONTROL_FIXED_COUNTER_1_HIGH 5
+
+#define BIT_CONTROL_FIXED_COUNTER_2_LOW  8
+#define BIT_CONTROL_FIXED_COUNTER_2_HIGH 9
 
 #define MASK(hex, mask) (hex|mask)
 #define BIT(pos) (1ULL << pos)
 
 using namespace std;
 
-const uint32_t regsize = 32;
-const string regmask = "31:0";
+const uint32_t regsize = 64;
+const string regmask = "63:0";
+bool sample = true;
+
+void sigint_callback(int signum) 
+{
+    cout << "Got SIGINT, exiting..." << endl;
+    sample = false;
+    exit(signum);
+}
 
 
 class MSRException: public exception
@@ -106,7 +112,7 @@ class MSRRegister {
             stringstream path;
             path << "/dev/cpu/" << cpu << "/msr";
 
-            this->_fd = open(path.str().c_str(), O_RDONLY);
+            this->_fd = open(path.str().c_str(), O_RDWR);
             if(this->_fd < 0 ) {
                 cout << "Error while opening MSR char device " << endl;
                 throw MSRException("Error while opening MSR");
@@ -123,15 +129,10 @@ class MSRRegister {
 
         void readMSR(uint64_t regno, string  range, uint64_t *buff) {
             uint64_t temp = 0;
-
-            cout << "Reading MSR register 0x" << hex << regno << endl;
-
-            /* Error handling here please */
             int num_read  = pread(this->_fd, &temp, sizeof(temp), regno);
             if(num_read  == -1) {
                 cout << "There was an error while reading MSR register" << endl;
             }
-
             *buff= align(temp & rangeToMask(range), range);
         }
 
@@ -139,7 +140,6 @@ class MSRRegister {
          *  Writes 64 bits to the MSR register regno
          */
         void writeMSR(uint64_t regno, uint64_t pattern) {
-            cout << "Writing to MSR register " << hex << regno << endl;
             int num_written = pwrite(this->_fd, &pattern, sizeof(pattern), regno);
             if(num_written == -1) {
                 cout << "Error while writing MSR register" << endl;
@@ -149,41 +149,36 @@ class MSRRegister {
          * Sets one bit on a specific MSR register
          */
         void setMSRBit(uint64_t regno, uint32_t bitno) {
-
             uint64_t temp;
             this->readMSR(regno, regmask, &temp);
             temp = temp | (1ULL << bitno);
             this->writeMSR(regno, temp);
-
         }
 
         /*
          * Resets one bit on a specific MSR register
          */
         void clearMSRBit(uint64_t regno, uint32_t bitno) {
-
             uint64_t temp;
             this->readMSR(regno, regmask, &temp);
             temp = temp && ~(1ULL << bitno);
             this->writeMSR(regno, temp);
        }
-
 };
 
 int main() {
-    uint64_t temp = 0;
-    MSRRegister cpu0(0);
-     
-    cout << "Reading MSR_PLATFORM_INFO(15:8) " << endl; 
-    cpu0.readMSR(MSR_PLATFORM_INFO, string("15:8"), &temp);
+    MSRRegister cpu0(2);
+    
+    signal(SIGINT, sigint_callback); 
+    
+    /* Computing the platform reference frequency */
+    uint64_t base_operating_ratio = 0;
+    cpu0.readMSR(MSR_PLATFORM_INFO, string("15:8"), &base_operating_ratio);
 
-    cout << "MSR_PLATFORM_INFO(15:8) "; 
-    cout << "0x" << hex << temp << endl;
-
-    /* Enabling Monitor counter 1 and 2 via the global performance counter control register
+    /* Enabling fixed counter 1 and 2 via the global performance counter control register
      *  - BIT_FIXED_ARCH_PERF_MONITOR_CTR_1
      *       Counts the number of core cycles while the core is not in halted
-     /*       sate.
+     *       sate.
      *  - BIT_FIXED_ARCH_PERF_MONITOR_CTR_2 
      *       Counts the number of base operating frequency cycles while the core
      *       is not in halted state.
@@ -191,41 +186,66 @@ int main() {
      * in MSR_IA32_CORE_PERF_GLOBAL_CTRL
      */
 
-    cpu0.setMSRBit(MSR_IA32_CORE_PERF_GLOBAL_CTRL, BIT_FIXED_ARCH_PERF_MONITOR_CTR_1);
-    cpu0.setMSRBit(MSR_IA32_CORE_PERF_GLOBAL_CTRL, BIT_FIXED_ARCH_PERF_MONITOR_CTR_2);
+    cpu0.setMSRBit(MSR_IA32_CORE_PERF_GLOBAL_CTRL, 
+                   BIT_FIXED_ARCH_PERF_MONITOR_CTR_1);
+
+    cpu0.setMSRBit(MSR_IA32_CORE_PERF_GLOBAL_CTRL, 
+                   BIT_FIXED_ARCH_PERF_MONITOR_CTR_2);
     
-    /* Enabling the Fixed-Function Performance Counter via its control register,
-     * MSR_IA32_FIXED_CTR_CTRL.
-     *
-     * Settings bits:
-     *  - BIT_CONTROL_FIXED_COUNTER_0
-     *  - BIT_CONTROL_FIXED_COUNTER_1
-     */
-    cpu0.setMSRBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_0);
-    cpu0.setMSRBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_1);
+    /* Enabling the Fixed Counters in MSR_IA32_FIXED_CTR_CTRL for all ring levels. */
 
-    uint64_t prev_fixed_ctr1;
-    uint64_t prev_fixed_ctr2; 
+    cpu0.writeMSR(MSR_IA32_FIXED_CTR_CTRL, 1UL << BIT_CONTROL_FIXED_COUNTER_1_LOW  |
+                                           1UL << BIT_CONTROL_FIXED_COUNTER_1_HIGH |
+                                           1UL << BIT_CONTROL_FIXED_COUNTER_2_LOW  | 
+                                           1UL << BIT_CONTROL_FIXED_COUNTER_2_HIGH);
 
-    
-    for(int i = 0 ; i<3; i++) {
+    uint64_t prev_fixed_ctr1 = 0, current_fixed_ctr1;
+    uint64_t prev_fixed_ctr2 = 0, current_fixed_ctr2; 
+    uint64_t reference_frequency = base_operating_ratio * BCLK;
 
-        cpu0.readMSR(0x30A, string("63:0"), &prev_fixed_ctr1);
-        cpu0.readMSR(MSR_IA32_FIXED_CTR2, string("63:0"), &prev_fixed_ctr2);
+    struct timespec ts;
+    ts.tv_sec   = 2;
+    ts.tv_nsec  = 0;
 
-        cout << "Fixed CTR1, CTR2 0x" 
-             << hex << prev_fixed_ctr1 << " " 
-             << hex << prev_fixed_ctr2 << endl;
+    while(sample)
+    {
+
+        cpu0.readMSR(MSR_IA32_FIXED_CTR_1, string("63:0"), &current_fixed_ctr1);
+        cpu0.readMSR(MSR_IA32_FIXED_CTR_2, string("63:0"), &current_fixed_ctr2);
+        
+        uint64_t diff_ctr1 = current_fixed_ctr1 - prev_fixed_ctr1;
+        prev_fixed_ctr1 = current_fixed_ctr1;
+        
+        uint64_t diff_ctr2 = current_fixed_ctr2 - prev_fixed_ctr2;
+        prev_fixed_ctr2 = current_fixed_ctr2;
+
+        cout << diff_ctr2 << " " << diff_ctr1 << endl;
+        //cout << "Base operating ratio: " << base_operating_ratio << endl;
+        //cout << "Reference frequency: " << reference_frequency << endl;
+        //cout << "Counters ratio " << (float)diff_ctr2/diff_ctr1  << endl;
+        cout << "Frequency: " << dec <<reference_frequency * (float)diff_ctr1/diff_ctr2 << endl;
+        nanosleep(&ts,NULL);
 
     }
 
     /* Disabling Monitor counter 1 and 2 in the global performance counter control register*/
-    cpu0.clearMSRBit(MSR_IA32_CORE_PERF_GLOBAL_CTRL, BIT_FIXED_ARCH_PERF_MONITOR_CTR_1);
-    cpu0.clearMSRBit(MSR_IA32_CORE_PERF_GLOBAL_CTRL, BIT_FIXED_ARCH_PERF_MONITOR_CTR_2);
+    cpu0.clearMSRBit(MSR_IA32_CORE_PERF_GLOBAL_CTRL, 
+                     BIT_FIXED_ARCH_PERF_MONITOR_CTR_1);
 
-    /* Disabling the fixed-function performance counter */
-    cpu0.clearMSRBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_0);
-    cpu0.clearMSRBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_1);
+    cpu0.clearMSRBit(MSR_IA32_CORE_PERF_GLOBAL_CTRL, 
+                     BIT_FIXED_ARCH_PERF_MONITOR_CTR_2);
 
+    /* Disabling the fixed-function performance counter 1 and 2*/
 
+    cpu0.clearMSRBit(MSR_IA32_FIXED_CTR_CTRL, 
+                     BIT_CONTROL_FIXED_COUNTER_1_LOW);
+
+    cpu0.clearMSRBit(MSR_IA32_FIXED_CTR_CTRL, 
+                     BIT_CONTROL_FIXED_COUNTER_1_HIGH);
+
+    cpu0.clearMSRBit(MSR_IA32_FIXED_CTR_CTRL, 
+                     BIT_CONTROL_FIXED_COUNTER_2_LOW);
+
+    cpu0.clearMSRBit(MSR_IA32_FIXED_CTR_CTRL,
+                     BIT_CONTROL_FIXED_COUNTER_2_HIGH);
 }
