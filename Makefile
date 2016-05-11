@@ -2,6 +2,9 @@ SOURCES := $(shell find . -name '*.cpp')
 OBJECTS := $(SOURCES:.cpp=.o)
 
 FLAGS = -std=c++11 -Wall -O0 -g
+ifdef DEBUG
+    FLAGS+=-DDEBUG
+endif
 
 all: cpuinfo
 

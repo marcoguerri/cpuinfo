@@ -4,6 +4,7 @@
 #include "msr_register.h"
 #include "utils.h"
 #include "hardware.h"
+#include "debug.h"
 
 using namespace std; 
 
@@ -23,11 +24,16 @@ int main() {
                                           BIT_CONTROL_FIXED_COUNTER_2_HIGH};
 
     MsrRegister cpu0(0);
-    
+    CHECK(cpu0.is_open(), "Could not open MSR register on CPU0", EXIT_FAILURE);
+
     /* Computing the platform reference frequency */
     
     uint64_t base_operating_ratio = 0;
-    cpu0.ReadMsr(MSR_PLATFORM_INFO, string("15:8"), &base_operating_ratio);
+    if(cpu0.ReadMsr(MSR_PLATFORM_INFO, string("15:8"), &base_operating_ratio) < 0) 
+    {
+        error("Could not read base operating ratio from MSR register");
+        return EXIT_FAILURE;
+    }
     
     /* Enabling fixed counter 1 and 2 in the global performance counter control register
      *  - BIT_FIXED_ARCH_PERF_MONITOR_CTR_1: counts the number of core cycles 
@@ -88,4 +94,7 @@ int main() {
     /* Disabling all ring levels for fixed-function counter 1 and 2 */
     for(auto bit: bit_ring_levels)
         cpu0.ClearMsrBit(MSR_IA32_FIXED_CTR_CTRL, bit);
+
+    return 0;
+
 }
