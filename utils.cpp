@@ -9,13 +9,16 @@
 
 extern bool sample;
 
-void sigint_callback(int signum) 
+void 
+sigint_callback(int signum) 
 {
     sample = false;
     exit(signum);
 }
 
-uint64_t range_to_mask(std::string range) {
+uint64_t 
+range_to_mask(std::string range) 
+{
     int32_t start, end;
     uint8_t separator;
 
@@ -29,8 +32,9 @@ uint64_t range_to_mask(std::string range) {
 }
 
 
-uint64_t align(uint64_t reg, std::string range) {
-
+uint64_t 
+align(uint64_t reg, std::string range) 
+{
     uint64_t start, end;
     uint8_t separator;
 

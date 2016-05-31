@@ -6,10 +6,10 @@ using namespace std;
 
 string get_vendor_string() {
 
-    uint64_t cpuid_op       = 0x0;
+    uint64_t cpuid_op = 0x0;
     
-    // One more null uint32 to be used as null ptr for the vendor string
-    uint32_t vendor[4]      = {0x0, 0x0, 0x0, 0x0};
+    /* One more null uint32 to be used as null ptr for the vendor string */
+    uint32_t vendor[4] = {0x0, 0x0, 0x0, 0x0};
     __asm__  volatile("movq %3, %%rax\n\t"
                       "cpuid\n\t"
                       "movl %%ebx, %0\n\t"
