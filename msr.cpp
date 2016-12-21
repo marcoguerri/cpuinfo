@@ -17,6 +17,7 @@
  * @brief File defining a class for reading/writing MSR registers via 
  * /dev/cpu/X/msr exported by msr kernel module.
  */
+#define __STDC_FORMAT_MACROS
 
 #include <iostream>
 #include <sstream>
@@ -156,7 +157,7 @@ MsrRegister::SetMsrBit(uint64_t regno, uint32_t bitno)
 {
     assert(bitno < regsize);
     uint64_t temp;
-    if(this->ReadMsr(regno, regmask, &temp) != 0) {
+    if(this->ReadMsr(regno, regmask64, &temp) != 0) {
         return -1;
     }
     temp = temp | BIT(bitno);
@@ -182,7 +183,7 @@ MsrRegister::ClearMsrBit(uint64_t regno, uint32_t bitno)
     assert(bitno < regsize);
 
     uint64_t temp;
-    if(this->ReadMsr(regno, regmask, &temp) != 0) {
+    if(this->ReadMsr(regno, regmask64, &temp) != 0) {
         error("[MSR: %" PRIu64 ", CPU: %d] Not open for reading.", regno, this->get_cpu());
         return -1;
     }

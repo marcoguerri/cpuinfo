@@ -4,7 +4,9 @@
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
+#include <inttypes.h>
 
+#define __STDC_FORMAT_MACROS
 
 #ifdef DEBUG
 #define debug(mess, ...) fprintf(stderr, "[%s:%d at %s] DEBUG: " mess "\n", __FILE__, __LINE__, __TIME__, ##__VA_ARGS__)

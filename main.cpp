@@ -1,10 +1,12 @@
 #include <vector>
 #include <string>
+#include <iomanip>
 
 #include "msr.h"
 #include "utils.h"
 #include "hardware.h"
 #include "debug.h"
+#include "cpu.h"
 
 using namespace std; 
 
@@ -15,82 +17,39 @@ main()
 {
     
     signal(SIGINT, sigint_callback); 
-    
     MsrRegister cpu0(0);
 
-    /* Computing the platform reference frequency */
-    uint64_t base_operating_ratio = 0;
-    if(cpu0.ReadMsr(MSR_PLATFORM_INFO, string("15:8"), &base_operating_ratio) != 0) 
+    struct cpu_fixed_counters prev, curr;
+    struct timespec ts = { .tv_sec = 1, .tv_nsec = 0 };
+    float prev_freq = 1200, freq = 0; 
+
+    uint64_t base_operating_ratio = init_cpu(cpu0);
+    if(base_operating_ratio == 0xFFFFFFFFFFFFFFFF)
     {
-        error("Could not read base operating ratio from MSR register");
+        error("Error while initializing CPU");
         return EXIT_FAILURE;
     }
-    
-    /* Enabling fixed counter 1 and 2 in the global performance counter control register
-     *    
-     *    BIT_FIXED_ARCH_PERF_MONITOR_CTR_1
-     *    Counts the number of core cycles while the core is not in halted state.
-     *    
-     *    BIT_FIXED_ARCH_PERF_MONITOR_CTR_2 
-     *    Counts the number of base operating frequency cycles while the core 
-     *    is not in halted state.
-     */
-    cpu0.SetMsrBit(MSR_IA32_CORE_PERF_GLOBAL_CTRL, BIT_FIXED_ARCH_PERF_MONITOR_CTR_1);
-    cpu0.SetMsrBit(MSR_IA32_CORE_PERF_GLOBAL_CTRL, BIT_FIXED_ARCH_PERF_MONITOR_CTR_1);
 
-    /* Enabling the fixed counters for all rings via the fixed counter control register*/
-    cpu0.SetMsrBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_1_LOW);
-    cpu0.SetMsrBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_1_HIGH);
-    cpu0.SetMsrBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_2_LOW);
-    cpu0.SetMsrBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_2_HIGH);
-
-    uint64_t prev_fixed_ctr1 = 0, current_fixed_ctr1;
-    uint64_t prev_fixed_ctr2 = 0, current_fixed_ctr2; 
-    
-    uint64_t reference_frequency = base_operating_ratio * BCLK;
-
-    struct timespec ts;
-    ts.tv_sec = 1;
-    ts.tv_nsec = 0;
-
-    cpu0.ReadMsr(MSR_IA32_FIXED_CTR_1, regmask, &prev_fixed_ctr1);
-    cpu0.ReadMsr(MSR_IA32_FIXED_CTR_2, regmask, &prev_fixed_ctr2);
-    
+    prev = sample_fixed_counters(cpu0); 
     nanosleep(&ts,NULL);
     while(sample) {
-
-        cpu0.ReadMsr(MSR_IA32_FIXED_CTR_1, regmask, &current_fixed_ctr1);
-        cpu0.ReadMsr(MSR_IA32_FIXED_CTR_2, regmask, &current_fixed_ctr2);
         
-        uint64_t diff_ctr1 = current_fixed_ctr1 - prev_fixed_ctr1;
-        uint64_t diff_ctr2 = current_fixed_ctr2 - prev_fixed_ctr2;
+        curr = sample_fixed_counters(cpu0); 
+        freq = calculate_cpu_freq(&prev, &curr, base_operating_ratio);
+        if(freq > FREQ_BOOST_FACTOR_LIMIT * prev_freq)
+            freq = prev_freq;
         
-        prev_fixed_ctr1 = current_fixed_ctr1;
-        prev_fixed_ctr2 = current_fixed_ctr2;
-
-        //cout << "Base operating ratio: " << base_operating_ratio << endl;
-        //cout << "Reference frequency: " << reference_frequency << endl;
-        //cout << "Counters ratio " << (float)diff_ctr2/diff_ctr1  << endl;
+        cout << "\rFrequency: ";
+        cout << setw(11) << std::fixed << std::setprecision(2) << freq;
         
-        cout << "\rFrequency: " \
-             << dec \
-             << reference_frequency * static_cast<float>(diff_ctr1)/diff_ctr2;
-
+        prev = curr;
+        prev_freq = freq;
+ 
         fflush(stdout);
         nanosleep(&ts,NULL);
     }
     
-    /* Disabling fixed counter 1 and 2 in the global performance counter 
-     * control register */
-    cpu0.ClearMsrBit(MSR_IA32_CORE_PERF_GLOBAL_CTRL, BIT_FIXED_ARCH_PERF_MONITOR_CTR_1);
-    cpu0.ClearMsrBit(MSR_IA32_CORE_PERF_GLOBAL_CTRL, BIT_FIXED_ARCH_PERF_MONITOR_CTR_1);
-    
-    /* Disabling all ring levels for fixed-function counter 1 and 2 */
-    cpu0.ClearMsrBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_1_LOW);
-    cpu0.ClearMsrBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_1_HIGH);
-    cpu0.ClearMsrBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_2_LOW);
-    cpu0.ClearMsrBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_2_HIGH);
-    
+    fini_cpu(cpu0); 
     return EXIT_SUCCESS;
 
 }
