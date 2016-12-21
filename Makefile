@@ -1,21 +1,22 @@
 SOURCES := $(shell find . -name '*.cpp')
 OBJECTS := $(SOURCES:.cpp=.o)
 
-FLAGS = -std=c++11 -Wall -O0 -g
+CFLAGS = -std=c++11 -Wall -O0 -g
+
 ifdef DEBUG
-    FLAGS+=-DDEBUG
+    CFLAGS+=-DDEBUG
 endif
 
 all: cpuinfo
 
 cpuinfo: $(OBJECTS)
-	$(CXX) $(OBJECTS) -o $@ $(LIBS) $(FLAGS)
+	$(CXX) $(OBJECTS) -o bin/$@ $(LIBS) $(CFLAGS)
 
 %.o: %.cpp
-	$(CXX) $(FLAGS) $(INCLUDES) -c $< -o $@
+	$(CXX) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 clean:
 	rm $(OBJECTS)
-	rm -f cpuinfo
+	rm -f bin/cpuinfo
 
 .PHONY: clean
