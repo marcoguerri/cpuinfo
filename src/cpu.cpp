@@ -1,5 +1,5 @@
 /*
- * cpuinfo - Tool which reports CPU statistics using MSR registers
+ * cpuinfo - Tool which reports CPU clock frequency using MSR registers
  *
  * Copyright (C) 2016 Marco Guerri <marco.guerri.dev@fastmail.com>
  *

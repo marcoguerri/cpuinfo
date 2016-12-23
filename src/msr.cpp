@@ -1,5 +1,5 @@
 /*
- * cpuinfo - Tool which reports CPU statistics using MSR registers
+ * cpuinfo - Tool which reports CPU clock frequency using MSR registers
  *
  * Copyright (C) 2016 Marco Guerri <marco.guerri.dev@fastmail.com>
  *
@@ -317,6 +317,7 @@ MsrRegister::get_freq()
     else
         return this->_freq;
 
+    /* base_operating_ratio * (Bus CLK) is the base operating frequency */
     float new_freq = this->_base_operating_ratio * BCLK * 
                      static_cast<float>(diff_ctr1)/diff_ctr2;
 
