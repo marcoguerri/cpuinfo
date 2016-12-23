@@ -20,6 +20,7 @@
 #include <vector>
 #include <string>
 #include <iomanip>
+#include <memory>
 
 #include "msr.h"
 #include "utils.h"
@@ -34,41 +35,39 @@ bool sample = true;
 int 
 main() 
 {
-    
+
     signal(SIGINT, sigint_callback); 
-    MsrRegister cpu0(0);
-
-    struct cpu_fixed_counters prev, curr;
+    float freq = 0;    
     struct timespec ts = { .tv_sec = 1, .tv_nsec = 0 };
-    float prev_freq = 1200, freq = 0; 
+    
+    vector<MsrRegister> cpu_vector;
+    for(uint16_t j = 0; j < get_number_cpus() ; ++j)
+        cpu_vector.emplace_back(MsrRegister(j));
 
-    uint64_t base_operating_ratio = init_cpu(cpu0);
-    if(base_operating_ratio == 0xFFFFFFFFFFFFFFFF)
-    {
-        error("Error while initializing CPU");
-        return EXIT_FAILURE;
-    }
-
-    prev = sample_fixed_counters(cpu0); 
+    FOR_ALL_CPUS(cpu_vector, init_counters);
+    FOR_ALL_CPUS(cpu_vector, sample_counters);
+   
     nanosleep(&ts,NULL);
     while(sample) {
+              
+        FOR_ALL_CPUS(cpu_vector, sample_counters);
         
-        curr = sample_fixed_counters(cpu0); 
-        freq = calculate_cpu_freq(&prev, &curr, base_operating_ratio);
-        if(freq > FREQ_BOOST_FACTOR_LIMIT * prev_freq)
-            freq = prev_freq;
+        stringstream ss;
+        for(uint16_t j = 0; j < get_number_cpus() ; ++j)
+        {
+            freq = cpu_vector[j].get_freq();
+            ss << "\rFrequency CPU" << setw(2) << j << ": ";
+            ss << setw(8) << std::fixed << std::setprecision(2) << freq << "\n";
+        }
         
-        cout << "\rFrequency: ";
-        cout << setw(11) << std::fixed << std::setprecision(2) << freq;
-        
-        prev = curr;
-        prev_freq = freq;
- 
+        cout << ss.str();
         fflush(stdout);
         nanosleep(&ts,NULL);
+        cout << "\033[2J";
     }
+   
+    FOR_ALL_CPUS(cpu_vector, fini_counters);
     
-    fini_cpu(cpu0); 
     return EXIT_SUCCESS;
 
 }

@@ -50,13 +50,12 @@ using namespace std;
  *  Constructor of MsrRegister class.
  *  @param[in]  cpu Number of the CPU that the class will be responsible for.
  */
-
-MsrRegister::MsrRegister(int cpu) 
+MsrRegister::MsrRegister(uint16_t cpu_num) : _base_operating_ratio(-1), _freq(1200)
 {
     stringstream path;
-    this->_cpu = cpu;
+    this->_cpu_num = cpu_num;
     
-    path << "/dev/cpu/" << cpu << "/msr";
+    path << "/dev/cpu/" << this->_cpu_num << "/msr";
     
     this->_fd = open(path.str().c_str(), O_RDWR);
     if(this->_fd < 0 ) { 
@@ -67,12 +66,82 @@ MsrRegister::MsrRegister(int cpu)
         }
     }
 }
+
+/**
+ *  Move constructor. Removes ownership of the file descriptor from the object it
+ *  is moving from. 
+ */
+MsrRegister::MsrRegister(MsrRegister&& rhv)
+{
+    this->_fd = rhv._fd;
+    this->_cpu_num = rhv._cpu_num;
+    this->_base_operating_ratio = rhv._base_operating_ratio;
+    rhv._fd = -1;
+}
+
+/**
+ *  Initializes performance counters
+ *  @retval Base operating ratio of the CPU
+ */
+int16_t
+MsrRegister::init_counters()
+{
+    uint64_t buff = 0;
+    
+    if(this->ReadMsr(MSR_PLATFORM_INFO, string("15:8"), &buff) != 0) 
+    {
+        error("Could not read base operating ratio from MSR register, CPU %d", 
+              this->cpu_num());
+        return -1;
+    }
+
+    /* Move low 16 bits of 64 bits unsigned to signed 16 */
+    this->_base_operating_ratio = buff;
+    
+    /*  Enabling fixed counter 1 and 2 in the global performance counter control reg.
+     *  BIT_FIXED_ARCH_PERF_MONITOR_CTR_1
+     *      Counts the number of core cycles while the core is not in halted state.
+     *  BIT_FIXED_ARCH_PERF_MONITOR_CTR_2 
+     *      Counts the number of base operating frequency cycles while the core is 
+     *      not in halted state.
+     */
+    this->SetMsrBit(MSR_IA32_CORE_PERF_GLOBAL_CTRL, BIT_FIXED_ARCH_PERF_MONITOR_CTR_1);
+    this->SetMsrBit(MSR_IA32_CORE_PERF_GLOBAL_CTRL, BIT_FIXED_ARCH_PERF_MONITOR_CTR_2);
+
+    /* Enabling fixed counters for all rings via the fixed counter control register */
+    this->SetMsrBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_1_LOW);
+    this->SetMsrBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_1_HIGH);
+    this->SetMsrBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_2_LOW);
+    this->SetMsrBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_2_HIGH);
+
+    return this->_base_operating_ratio;
+}
+
+
+/**
+ * Disables performance counters
+ */
+void 
+MsrRegister::fini_counters()
+{
+    /* Disabling fixed counter 1,2 in the global performance counter control register */
+    this->ClearMsrBit(MSR_IA32_CORE_PERF_GLOBAL_CTRL, BIT_FIXED_ARCH_PERF_MONITOR_CTR_1);
+    this->ClearMsrBit(MSR_IA32_CORE_PERF_GLOBAL_CTRL, BIT_FIXED_ARCH_PERF_MONITOR_CTR_2);
+    
+    /* Disabling all ring levels for fixed-function counter 1 and 2 */
+    this->ClearMsrBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_1_LOW);
+    this->ClearMsrBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_1_HIGH);
+    this->ClearMsrBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_2_LOW);
+    this->ClearMsrBit(MSR_IA32_FIXED_CTR_CTRL, BIT_CONTROL_FIXED_COUNTER_2_HIGH);
+}
         
 /** 
  * Destructor of MsrRegister class. Closes file descriptors previously opened.
  */
 MsrRegister::~MsrRegister() 
 {
+    if(this->is_open())
+        this->fini_counters();
     close(this->_fd);
 }
  
@@ -80,10 +149,10 @@ MsrRegister::~MsrRegister()
 /**
  *  Returns the CPU number which is being handled by this object.
  */
-int
-MsrRegister::get_cpu() 
+uint16_t
+MsrRegister::cpu_num() 
 {
-    return this->_cpu;
+    return this->_cpu_num;
 }
    
 int
@@ -109,7 +178,7 @@ MsrRegister::ReadMsr(uint64_t regno, std::string  range, uint64_t *buff)
 {
     assert(buff != nullptr);
     if(!this->is_open()) {
-        error("[MSR: %" PRIu64 ", CPU: %d] Not open for reading.", regno, this->get_cpu());
+        error("[MSR: %" PRIu64 ", CPU: %d] Not open for reading.", regno, this->cpu_num());
         return -1;
     }
         
@@ -141,7 +210,7 @@ MsrRegister::WriteMsr(uint64_t regno, uint64_t pattern)
     
     int num_written = pwrite(this->_fd, &pattern, sizeof(pattern), regno);
     if(num_written != sizeof(pattern)) {
-        error("[MSR: %" PRIu64 ", CPU: %d] Write error: %s", regno, this->get_cpu(), strerror(errno));
+        error("[MSR: %" PRIu64 ", CPU: %d] Write error: %s", regno, this->cpu_num(), strerror(errno));
         return -1;
     }
     return 0;
@@ -188,13 +257,71 @@ MsrRegister::ClearMsrBit(uint64_t regno, uint32_t bitno)
 
     uint64_t temp;
     if(this->ReadMsr(regno, regmask64, &temp) != 0) {
-        error("[MSR: %" PRIu64 ", CPU: %d] Not open for reading.", regno, this->get_cpu());
+        error("[MSR: %" PRIu64 ", CPU: %d] Not open for reading.", regno, this->cpu_num());
         return -1;
     }
     temp = temp && ~BIT(bitno);
     if(this->WriteMsr(regno, temp) != 0) {
-        error("[MSR: %" PRIu64 ", CPU: %d] Read error: %s", regno, this->get_cpu(), strerror(errno));
+        error("[MSR: %" PRIu64 ", CPU: %d] Read error: %s", regno, this->cpu_num(), strerror(errno));
         return -1;
     }
     return 0;
 }
+
+
+void
+MsrRegister::sample_counters()
+{
+    struct cpu_fixed_counters fixed_counters;
+
+    this->ReadMsr(MSR_IA32_FIXED_CTR_1, regmask64, &fixed_counters.counter1);
+    this->ReadMsr(MSR_IA32_FIXED_CTR_2, regmask64, &fixed_counters.counter2);
+
+    this->_counters_history.push_back(fixed_counters);
+
+    while(this->_counters_history.size() > 2)
+        this->_counters_history.pop_front();
+}
+
+
+float
+MsrRegister::get_freq()
+{
+    if(this->_base_operating_ratio == -1)
+        return -1;
+
+    if(this->_counters_history.size() < 2)
+    {
+        /* Sample as many times as it's necessary to have a prev and curr sample */ 
+        while(this->_counters_history.size() != 2)
+            this->sample_counters();
+    }
+
+    uint64_t ctr_prev, ctr_curr;
+    uint64_t diff_ctr1, diff_ctr2;
+
+    ctr_curr = this->_counters_history.back().counter1;
+    ctr_prev = this->_counters_history.front().counter1;
+
+    if(ctr_curr > ctr_prev)
+        diff_ctr1 = ctr_curr - ctr_prev;
+    else
+        return this->_freq;
+
+    ctr_curr = this->_counters_history.back().counter2;
+    ctr_prev = this->_counters_history.front().counter2;
+    
+
+    if(ctr_curr > ctr_prev)
+        diff_ctr2 = ctr_curr - ctr_prev;
+    else
+        return this->_freq;
+
+    float new_freq = this->_base_operating_ratio * BCLK * 
+                     static_cast<float>(diff_ctr1)/diff_ctr2;
+
+    this->_freq = new_freq;
+    return new_freq;
+}
+
+

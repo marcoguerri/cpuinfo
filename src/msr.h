@@ -22,26 +22,45 @@
 
 #include <string>
 #include <stdint.h>
+#include <deque>
+
+#include "cpu.h"
+
+struct cpu_fixed_counters {
+    uint64_t counter1;
+    uint64_t counter2;
+};
 
 class MsrRegister {
 
     private:
         int _fd;
-        int _cpu;
+        uint16_t _cpu_num;
+        int16_t _base_operating_ratio;
+        float _freq;
+        std::deque<struct cpu_fixed_counters> _counters_history;
+
+        /* This objec can't be copied, it has ownership of the fd for /dev/msr */    
+        MsrRegister(MsrRegister&);
 
     public:
-        MsrRegister(int cpu);
+        MsrRegister(uint16_t cpu);
+        MsrRegister(MsrRegister&& rhv);
         ~MsrRegister();
         
+        /* Functions for handling MSR registers */
         int is_open();
-
         int ReadMsr(uint64_t, std::string range, uint64_t *buff);
         int WriteMsr(uint64_t regno, uint64_t pattern);
-
         int SetMsrBit(uint64_t regno, uint32_t bitno);
         int ClearMsrBit(uint64_t regno, uint32_t bitno);
 
-        int get_cpu();
+        int16_t init_counters();
+        void fini_counters();
+        uint16_t cpu_num();
+       
+        void sample_counters();
+        float get_freq();
 };
 
 #endif

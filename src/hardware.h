@@ -24,10 +24,12 @@
 #include <string>
 #include <inttypes.h>
 
+#define FOR_ALL_CPUS(vec, method) for(uint16_t j = 0; j < get_number_cpus(); j++) { \
+                                    vec[j].method(); \
+                                  } 
 const uint32_t regsize = 64;
 const std::string regmask64 = "63:0";
 
-#define FREQ_BOOST_FACTOR_LIMIT 5
 #define BCLK        100 
 
 #define BASE_OPERATING_RATIO "15:8"
