@@ -24,9 +24,10 @@
 #include <string>
 #include <inttypes.h>
 
-#define FOR_ALL_CPUS(vec, method) for(uint16_t j = 0; j < get_number_cpus(); j++) { \
-                                    vec[j].method(); \
-                                  } 
+#define FOR_ALL_CPUS(iter, vec, method) \
+            for(iter = vec.begin(); iter != vec.end(); ++iter) \
+                iter->method(); 
+
 const uint32_t regsize = 64;
 const std::string regmask64 = "63:0";
 
