@@ -21,6 +21,8 @@
 #include <string>
 #include <iomanip>
 #include <memory>
+#include <unistd.h>
+#include <stdlib.h>
 
 #include "msr.h"
 #include "utils.h"
@@ -33,12 +35,26 @@ using namespace std;
 bool sample = true;
 
 int 
-main() 
+main(int argc, char **argv) 
 {
-
     signal(SIGINT, sigint_callback); 
-    float freq = 0;    
-    struct timespec ts = { .tv_sec = 1, .tv_nsec = 0 };
+    float freq = 0;   
+    int c = 0;
+    uint8_t interval = 1;
+
+    /* Parsing command line options */
+    while ((c = getopt (argc, argv, "i:c:")) != -1)
+    switch (c)
+    {
+        case 'i':
+            interval = atoi(optarg);
+            break;
+        default:
+            fprintf (stderr, "Unknown option `-%c'.\n", optopt);
+            return EXIT_FAILURE;
+    }
+ 
+    struct timespec ts = { .tv_sec = interval, .tv_nsec = 0 };
     
     vector<MsrRegister> cpu_vector;
     for(uint16_t j = 0; j < get_number_cpus() ; ++j)
@@ -46,12 +62,10 @@ main()
 
     FOR_ALL_CPUS(cpu_vector, init_counters);
     FOR_ALL_CPUS(cpu_vector, sample_counters);
-   
-    nanosleep(&ts,NULL);
+
     while(sample) {
               
         FOR_ALL_CPUS(cpu_vector, sample_counters);
-        
         stringstream ss;
         for(uint16_t j = 0; j < get_number_cpus() ; ++j)
         {
