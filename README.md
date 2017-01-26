@@ -4,13 +4,12 @@ via MSR registers. In particular:
  
   * Fixed Counter 1 counts the number of clock cycles while the core is not in 
     halted state
-  * Fixed Counter 2 counts the number of reference clock cycles (at the base operating
-    frequency) while the core is not in halted state
+  * Fixed Counter 2 counts the number of reference clock cycles, at the base operating
+    frequency, while the core is not in halted state
 
 The clock frequency of the core when not in halted state is obtained as follows:
 ```
-time_unhalted = base_reference_clock_frequency / reference_cycles_unhalted
-clock_frequeny = cycles_unhalted / time_unhalted
+clock_frequency = base_operating_frequency * (unhalted_core_cycles / unhalted_reference_cycles)
 ```
 
 ### License ###
