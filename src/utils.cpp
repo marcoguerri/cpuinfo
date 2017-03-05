@@ -26,7 +26,19 @@
 #include <stdlib.h>
 #include "utils.h"
 
+
+using namespace std;
+
 extern bool sample;
+
+
+void 
+clear_screen()
+{
+    cout << "\033[2J";
+    cout << "\033[H";
+}
+
 
 void 
 sigint_callback(int signum) 

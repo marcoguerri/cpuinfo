@@ -17,24 +17,11 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
 
-#ifndef UTILS_H
-#define UTILS_H
-
-#include <sstream>
-#include <string>
-#include <iostream>
+#ifndef _CPU_H_
+#define _CPU_H_
 
 #include <stdint.h>
-#include <signal.h>
-#include <stdlib.h>
 
-#define MASK(hex, mask) (hex|mask)
-#define BIT(pos) (1ULL << pos)
-
-void clear_screen();
-void sigint_callback(int signum);
-uint64_t range_to_mask(std::string range);
-uint64_t align(uint64_t reg, std::string range);
+int16_t get_number_cpus();
 
 #endif
-

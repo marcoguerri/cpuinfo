@@ -31,7 +31,7 @@
 const uint32_t regsize = 64;
 const std::string regmask64 = "63:0";
 
-#define BCLK        100 
+#define BCLK        133
 
 #define BASE_OPERATING_RATIO "15:8"
 

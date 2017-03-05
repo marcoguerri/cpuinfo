@@ -10,6 +10,7 @@ endif
 all: cpuinfo
 
 cpuinfo: $(OBJECTS)
+	install -m 755 -d bin
 	$(CXX) $(OBJECTS) -o bin/$@ $(LIBS) $(CFLAGS)
 
 %.o: %.cpp

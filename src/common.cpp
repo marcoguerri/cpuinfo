@@ -17,24 +17,48 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
 
-#ifndef UTILS_H
-#define UTILS_H
-
-#include <sstream>
+#include <vector>
 #include <string>
+#include <fstream>
 #include <iostream>
 
-#include <stdint.h>
-#include <signal.h>
-#include <stdlib.h>
+#include "utils.h"
+#include "hardware.h"
+#include "debug.h"
+#include "cpu.h"
 
-#define MASK(hex, mask) (hex|mask)
-#define BIT(pos) (1ULL << pos)
+using namespace std;
 
-void clear_screen();
-void sigint_callback(int signum);
-uint64_t range_to_mask(std::string range);
-uint64_t align(uint64_t reg, std::string range);
+/**
+ * Returns the number of logical CPUs based on /proc/stat
+ */
+int16_t
+get_number_cpus()
+{
+    uint16_t num_cpus = 0;
+    uint16_t cpu_num;
 
-#endif
+    char c,p,u;
+
+    string line;
+    ifstream f("/proc/stat");
+    
+    if(!f.is_open())
+    {
+        error("Error while opening /proc/stat: %s", strerror(errno));
+        return -1;
+    }
+
+    /* Discard first list (cpu ...) */
+    getline(f, line);
+    
+    while(getline(f, line))
+    {
+        istringstream ss(line);
+        if(ss >> c >> p >> u >> cpu_num) 
+            num_cpus++;
+            continue;   
+    }
+    return num_cpus;
+}
 
