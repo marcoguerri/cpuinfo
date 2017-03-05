@@ -17,7 +17,7 @@ cpuinfo: $(OBJECTS)
 	$(CXX) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 clean:
-	rm $(OBJECTS)
+	rm -f $(OBJECTS)
 	rm -f bin/cpuinfo
 
 .PHONY: clean
