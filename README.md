@@ -12,6 +12,10 @@ The clock frequency of the core when not in halted state is obtained as follows:
 clock_frequency = base_operating_frequency * (unhalted_core_cycles / unhalted_reference_cycles)
 ```
 
+**NOTE**: this implementation assumes the same base_operating_frequency for all architecture.
+This is not true and might give wrong results. The code should be smarter and figure out
+the correct base_operating_frequency from the architecture of the CPU.
+
 ### License ###
 `cpuinfo` is licensed under the GPLv3 license.
 
